@@ -4,7 +4,7 @@
 
 ### 1. 组件概述
 
-`BulletMovement` 是一个轻量级的子弹移动组件，旨在为射击游戏、弹幕游戏等非物理驱动的子弹场景提供简单、灵活的移动控制。通过参数化配置，玩家可以快速实现多种弹道效果，支持从基本的子弹移动到复杂的反射、追踪、回归等效果。
+`BulletMovement` 是一个纯C++，无物理，高性能，完全参数驱动的轻量级子弹移动组件，提供一站式的射击游戏-弹幕游戏的子弹移动解决方案，集成了众多游戏化的、直接上手可用的功能，只需要通过简单的参数配置即可使用。
 
 #### 功能支持：
 1. **基础弹道控制**：
@@ -24,7 +24,7 @@
    - 集成导弹尾迹特效，不会随着子弹消失而立刻消失。
    - 支持回归效果，子弹可以指定回归对象并返回。
 
-### 2. 使用方式
+### 使用方式：
 
 1. **在 Actor 内添加 BulletMovement 组件**
    将 `BulletMovement` 组件添加到角色或物体的 Actor 中。
@@ -39,7 +39,7 @@
    - **瞄准方向**：设置子弹的目标方向（世界位置）。
 
 3. **物理与加速度设置**：
-   - **加速度信息**：设置子弹的加速度，可以使用动态曲线调整加速度变化。
+   - **加速度信息**：设置子弹的加速度，以常量加速度或者动态曲线调整速度变化。
    - **命中后减速/阶段**：设置子弹命中后的减速效果，可以分阶段设置减速的强度。
    - **重力尺度**：设置子弹受重力影响的程度，与场景的默认重力相乘来影响子弹轨迹。
    
@@ -60,63 +60,3 @@
 - **追踪与回归**：
   - 追踪效果：控制子弹自动追踪目标，可以手动启用追踪并通过曲线动态调整追踪强度。
   - 回归效果：当子弹停止时，可以根据回归目标进行回归，适用于回旋镖、火箭等类型。
- 
-  # BulletMovementComponent 用户手册
-
-基于UE5.5开发的子弹运动组件，支持弹道跟踪、重力模拟、折射反射、归位系统、加速/减速曲线等特性，适用于弹幕射击类游戏开发。
-
----
-
-## 组件参数 (Editable in Editor)
-| **参数分类** | **显示名称** | **C++类型** | **默认值** | **说明** |
-|--------------|--------------|-------------|------------|----------|
-| **Bullet Performance** |  |  |  |  |
-|  | `Initial Speed` | `float` | 0 | 子弹初始速度（单位/秒） |
-|  | `Max Speed` | `float` | 0 | 最大速度限制（0=无限制） |
-|  | `Min Speed` | `float` | 0 | 触发停止的最小速度阈值 |
-|  | `Max Move Distance` | `float` | 0 | 最大移动距离限制（0=无限制） |
-|  | `Gravity Scale` | `float` | 0 | 重力缩放系数（0=禁用重力） |
-|  | `Initial Follow AimPoint` | `uint8` | false | 初始速度是否朝向瞄准点（AimPoint） |
-|  | `Aiming Point` | `FVector` | (0,0,0) | 初始瞄准点坐标（仅在`bFollowAim`启用时生效） |
-| **Bullet Trail Effect** |  |  |  |  |
-|  | `Trail Effect` | `UNiagaraSystem*` | nullptr | 拖尾粒子特效资产 |
-|  | `Effect Scale` | `float` | 1 | 拖尾特效缩放系数 |
-| **Bullet Refract** |  |  |  |  |
-|  | `Refract Type` | `E_BulletRefractType` | None | 子弹折射类型：<br>- **No Refract**：碰撞后停止<br>- **Standard**：镜面反射<br>- **Targeted**：导向目标折射 |
-|  | `Refract Count` | `int32` | 0 | 最大折射次数（-1=无限） |
-|  | `Max Detection Range for Directional Refract` | `float` | 0 | 自动折射目标检测范围半径 |
-|  | `Max Angle for Auto Refract` | `float` | 0 | 自动折射目标检测最大角度（单位：度） |
-| **Bullet Homing** |  |  |  |  |
-|  | `Homing Efficiency` | `float` | 0 | 自动跟踪效率（0-100） |
-|  | `Homing Curve` | `UCurveFloat*` | nullptr | 跟踪效率随时间变化的曲线 |
-|  | `Return Completion Distance` | `float` | 100 | 归位完成判定距离（平方值） |
-
----
-
-## 蓝图参数 (Runtime Only)
-| **分类** | **变量名** | **C++类型** | **说明** |
-|----------|------------|-------------|----------|
-| **Bullet Basic Info** |  |  |  |
-|  | `Bullet` | `AActor*` | 当前控制的子弹Actor |
-|  | `BulletOwner` | `AActor*` | 子弹所有者Actor |
-|  | `IgnoreActors` | `TArray<AActor*>` | 忽略碰撞的Actor列表（含自身） |
-| **Bullet Performance** |  |  |  |
-|  | `CurrentSpeed` | `float` | 当前实时速度 |
-|  | `MovedDistance` | `float` | 已移动距离（平方值） |
-|  | `BulletStep` | `int32` | 当前时间阶段索引 |
-| **Bullet Trail Effect** |  |  |  |
-|  | `TrailComp` | `UNiagaraComponent*` | 拖尾特效组件实例 |
-
----
-
-## 事件系统
-| **事件名称** | **触发条件** | **参数** | **说明** |
-|--------------|--------------|----------|----------|
-| `On Bullet Lost Homing Target` | 跟踪目标丢失时触发 | 无 |  |
-| `On Bullet Triggered Refract` | 子弹发生折射时触发 | - **Hit**：碰撞数据<br>- **Velocity**：折射前速度向量 |  |
-| `On Bullet Time Step Up` | 进入新时间阶段时触发 | **Step**：新阶段索引 |  |
-| `On Bullet Triggered Deceleration` | 触发减速阶段时触发 | - **CurrentSpeed**：当前速度<br>- **DeceleStep**：减速阶段索引 |  |
-| `On Bullet Starts Returning` | 开始归位时触发 | - **ReturnMesh**：目标网格体<br>- **ReturnSocket**：目标插槽 |  |
-| `On Bullet Movement Stopped` | 子弹停止时触发 | **Reason**：停止原因枚举 |  |
-
----
