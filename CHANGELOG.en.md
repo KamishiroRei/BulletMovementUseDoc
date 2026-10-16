@@ -4,40 +4,48 @@
 
 ## 2.0
 
-These notes correspond to `VersionName = 2.0` in the plugin descriptor, with Win64 source packages for 11 engine branches: UE 4.26, 4.27, 5.0, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, and 5.8. Each package passed its corresponding UBT/UHT and plugin C++ object compilation. This does not establish linking, runtime, or packaged-build coverage on every version.
+BulletMovement 2.0 keeps the existing way of building a projectile: add the component to an ordinary Actor and configure its movement. On UE5, the component now manages Mass scheduling automatically. On UE4, it runs the shared motion kernel from component Tick.
 
-- The BulletMovement component manages its movement lifecycle on ordinary Actors, without a special Actor base class, manager, or Mass Trait asset.
-- UE5 uses automatic Mass scheduling, separating game-thread input, numerical motion processing, and game-thread scene movement/events. UE4 runs the same numerical kernel through component Tick.
-- UE5.0–5.3 traverse chunks sequentially on the Mass worker; UE5.4 and later use parallel chunk queries. UE5.8 additionally supplies scene-publication and query-batching support for the corresponding Chaos interfaces.
-- Retains the public `UBulletMovementComponent` class name and common Blueprint entry points/events, including the compatibility spelling `OnBulletRetun`. Adds explicit stop reasons and the `OnBulletMovementStop` event entry point.
-- Synchronizes `IgnoreActors` to movement sweeps while preserving pre-existing native ignore entries. Supports automatic promotion of one query-enabled collision shape beneath an untouched `DefaultSceneRoot`.
-- Retains homing, return, reflection, acceleration, hit deceleration, time/range limits, and Niagara trail workflows, with pooling activation/stopping integrated into the UE5 entity lifecycle.
-- Fixes a pooled shot retaining the previous shot's current reflection target. Each activation clears `CurrentRefTarget`, allowing a refilled reflection chain to start at its first target.
+### What's changed
+
+- Ordinary Actors can use the component without a special base class, manager Actor, or Mass Trait asset. On UE5, activation, stopping, unregistration, and destruction are integrated with the Mass entity lifecycle.
+- UE5 gathers Actor and component input on the game thread, computes numerical motion in Mass, and applies scene movement, collision, and events on the game thread. UE4 uses the same motion calculations without Mass.
+- UE5.0–5.3 process chunks sequentially in the Mass motion processor's worker task. UE5.4 and later use parallel chunk queries. UE5.8 also supports scene publication and batched queries through the corresponding Chaos interfaces.
+- The public class remains `UBulletMovementComponent`, along with common Blueprint functions and events, including the compatibility spelling `OnBulletRetun`. There are additional explicit stop reasons and an `OnBulletMovementStop` event.
+- Changes to `IgnoreActors` are synchronized with movement sweeps, preserving native movement-ignore entries that were already present. The component can also promote a single query-enabled collision shape beneath an untouched `DefaultSceneRoot`.
+- Homing, return, reflection, acceleration, hit deceleration, time and distance limits, and Niagara trails remain available through the component workflow.
+- A pooled shot no longer retains the previous shot's current reflection target. Each activation clears `CurrentRefTarget`, so a refilled reflection chain can start at its first target.
+
+The plugin descriptor uses `VersionName = 2.0`. The release targets Win64 and provides source packages for UE 4.26, 4.27, and 5.0–5.8, covering 11 engine branches. Demo maps and example assets are not included. The [validation scope below](#validation-and-performance-scope) explains the compilation and runtime coverage.
 
 ### Upgrading from 1.0
 
-Keep a recoverable copy of your own project before upgrading. Rebuild with the matching engine, open existing bullet Blueprints, and review settings and pins. A retained class name does not guarantee that all C++ source or Blueprint pins are unchanged; recompile your subclasses and Blueprints.
+Keep a recoverable copy of your project before upgrading. Install the package for your engine, rebuild, and open and recompile existing bullet Blueprints and C++ subclasses. Check their settings and pins. Keeping the class name does not mean every C++ reference or Blueprint pin is unchanged.
 
-**Time settings.** 2.0 adds `DefaultBulletTimeLimits` as the per-activation stage template. A nonempty legacy `BulletTimeLimits` array is copied into that template at BeginPlay; the runtime array is still consumed as stages advance. Consolidate conflicting old values. An empty stage array does not mean infinite lifetime.
+**Time settings.** Use `DefaultBulletTimeLimits` as the template for each activation. BeginPlay copies a nonempty legacy `BulletTimeLimits` array into that template, and activation then copies the template into the runtime array. The runtime entries are consumed as stages advance. If old content contains values in both arrays, consolidate them so the legacy array does not overwrite your intended settings. An empty stage array stops at the movement check; it does not mean unlimited lifetime.
 
-**Speed and units.** In the public component, `MaxSpeed = 0` leaves acceleration uncapped, `MaxMoveDistance = 0` leaves outbound distance unlimited, and `ReturnRange` is a radius in cm. Acceleration defaults to per-second integration (`bScaleByDelta = true`), rather than a fixed increment per update. Return still takes its speed from `MaxSpeed`, so set a positive value when using it. Do not apply project-specific subclass numerical conventions to the public component.
+**Speed and units.** In the public component, `MaxSpeed = 0` leaves acceleration uncapped, `MaxMoveDistance = 0` gives unlimited distance before return, and `ReturnRange` is a radius in cm. Acceleration now defaults to integration over elapsed time with `bScaleByDelta = true`, instead of a fixed speed increment per update. `SetupReturn` sets `CurrentSpeed` to `MaxSpeed`, so it needs a positive value; zero leaves the return leg stationary. Use these public-component conventions when updating your content; project-specific subclasses may use different numerical conventions.
 
-**Acceleration curves.** The published `AccleCurve` asset input remains. Assigning an asset selects it, with `DefaultAccle` as its multiplier. The old `bUseAccleCurve` flag alone does not select a valid curve, and turning it off does not ignore an assigned asset. Use `StopAcceleration` to disable acceleration. Choose `AccleType = Curve` for the new inline curve.
+**Acceleration curves.** The `AccleCurve` asset input is still supported. An assigned asset takes priority, and its Y value is multiplied by `DefaultAccle`. That multiplier defaults to 0, so assigning a curve alone produces no acceleration. The legacy `bUseAccleCurve` flag alone does not select a curve, and setting it to false does not bypass an assigned asset. Call `StopAcceleration()` to pause acceleration. To use the new inline curve, select `AccleType = Curve` and edit `RuntimeAccleCurve`.
 
-**Collision roots and ignores.** Make the actual collision shape the root, or satisfy the automatic-promotion rule. The bullet itself is ignored automatically; add the shooter to `IgnoreActors` yourself. Do not rely on children following movement to provide full sweeps.
+**Collision roots and ignores.** Make the actual collision shape the root, or use the single-shape layout described in the [collision guide](README.en.md#collision-and-ignored-actors) so the component can promote it automatically. Child shapes following the root do not each receive a full movement sweep. The bullet ignores itself automatically; add the shooter to `IgnoreActors` yourself.
 
-**Events and stopping.** `StopBulletMovement` stops silently; use `BulletStop` for a stop-reason callback. Existing `OnBulletStop` and additional `OnBulletMovementStop` both broadcast for a reasoned stop. Do not bind the same damage/recycling action to both. `OnBulletRetun` means return started; reason `Return` means it ended. New enum values follow the original `Time/Distance/Speed/Return` entries.
+**Events and stopping.** `StopBulletMovement()` stops without broadcasting a stop reason. Use `BulletStop(Reason)` when you need a callback: it broadcasts `OnBulletMovementStop`, then `OnBulletStop`, and then stops movement. Bind a particular damage or recycling action to one of those events. `OnBulletRetun` means return has started; a stop with reason `Return` means it has ended. New stop-enum values follow the original `Time`, `Distance`, `Speed`, and `Return` entries. The compatibility spellings `Hited`, `Dameged`, and `OnBulletRetun` are retained.
 
-**Pooling.** Activation resets shot state such as speed, time, and distance. It does not restore consumed reflection counts, hit-deceleration arrays, persistent forces, or your game's per-shot settings. Refill them as described in the [guide](README.en.md#trails-stopping-and-pooling). Trails are cleaned up with Actor destruction; do not depend on them surviving it.
+**Pooling.** Activation resets shot state such as speed, remaining distance, time stages, and return state. It also clears `CurrentRefTarget`. It does not refill consumed reflection counts or hit-deceleration arrays, clear persistent forces, or restore your per-shot settings. Prepare these before reactivation using the [pooling sequence](README.en.md#trails-stopping-and-pooling). The deceleration-stage counter does not reset automatically, so use your own per-shot counter if needed. Trail components are cleaned up when the Actor is destroyed; they do not persist independently afterward.
 
-**C++.** Acceleration, deceleration, and enums now have separate headers: `FBulletAcceleInfo.h`, `FBulletDeceleInfo.h`, `E_BulletAccleType.h`, `E_BulletRefractType.h`, and `E_BulletStopReason.h`. Some runtime status and internal flags are no longer exposed as writable Blueprint settings. Use the supported function entry points and review code that accesses internal fields directly. `TrailVFX` still takes a Niagara System; do not depend on its underlying pointer-wrapper type.
+**C++ headers and property access.** Acceleration, deceleration, and the enums now have separate headers: `FBulletAcceleInfo.h`, `FBulletDeceleInfo.h`, `E_BulletAccleType.h`, `E_BulletRefractType.h`, and `E_BulletStopReason.h`. Some runtime status fields and internal flags are no longer writable Blueprint settings. Review code that accesses internals directly and use the supported component functions. `TrailVFX` still takes a Niagara System; avoid depending on the pointer-wrapper type used internally.
 
 ### Validation and performance scope
 
-The exact engine versions used for build checks are 4.26.2, 4.27.2, 5.0.3, 5.1.1, 5.2.1, 5.3.2, 5.4.4, 5.5.4, 5.6.1, 5.7.4, and 5.8.3. Checks use each version's UBT/UHT and non-Unity plugin C++ compilation with `NoLink`. They do not cover every historical patch or establish that DLL linking, packaging, and gameplay have passed on every branch.
+Compilation checks used the following engine patch versions: 4.26.2, 4.27.2, 5.0.3, 5.1.1, 5.2.1, 5.3.2, 5.4.4, 5.5.4, 5.6.1, 5.7.4, and 5.8.3. Each corresponding source package passed checks with that engine's UBT/UHT and non-Unity plugin C++ object compilation using `NoLink`.
 
-Current runtime observations cover ordinary Actor activation, stopping, unregistration/destruction, and a projectile integration on UE5.8. They do not establish runtime coverage for every target version, packaged configuration, or network mode. Treat cross-version build checks separately from scene execution. No universal cross-version Mass net-speedup or hitch-free result has been established; measure your actual game workload.
+These checks exercise Unreal's build and reflected-header tooling and compile the plugin's C++ objects. Because they use `NoLink`, they do not establish that plugin DLL linking succeeded on all 11 versions. They also do not establish packaging or gameplay coverage, or compatibility with every historical patch in an engine branch.
+
+Runtime observations are limited to UE5.8: ordinary Actor activation and stopping, component unregistration and Actor destruction, and a projectile integration. This does not establish runtime coverage for every target engine, packaged configuration, or network mode.
+
+Mass integration changes how motion work is scheduled. An overall speedup or hitch-free result has not been established across engine versions. Actors, collision, events, Niagara, and project logic still contribute to frame time; measure the complete frame with your actual projectile workload.
 
 ## 1.0
 
-The initial public workflow adds BulletMovement to an Actor and configures motion through parameters. Features include speed, range, time stages, acceleration curves, hit deceleration, deflection, reflection, homing, return, trails, and spread/spawning helpers.
+The initial release introduced the Actor-component workflow: add BulletMovement and configure projectile motion through parameters. It included speed and range limits, time stages, acceleration curves, hit deceleration, deflection, normal and targeted reflection, homing, return, Niagara trails, and spread and spawning helpers.

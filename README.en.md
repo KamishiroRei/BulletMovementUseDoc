@@ -2,114 +2,140 @@
 
 [简体中文](README.md) · [Changes and migration](CHANGELOG.en.md)
 
-BulletMovement adds parameter-driven projectile motion to an ordinary Actor: acceleration and curves, gravity, homing, return, reflection, hit deceleration, distance and time limits, and Niagara trails. Add the **BulletMovement** component to your bullet Actor, configure it, and movement starts automatically. No special bullet base class, manager Actor, or Mass Trait asset is required. Your game supplies damage, explosions, weapon rules, and pooling.
+BulletMovement is a projectile movement component for ordinary Actors. Add **BulletMovement** to your bullet Actor, set its speed, range, and lifetime, and it can move as soon as it activates. From there, you can add acceleration curves, gravity, homing, return, reflection, hit deceleration, and Niagara trails through the same component.
 
-> This guide covers the 2.0 update for Win64, with source packages for 11 engine branches: UE 4.26, 4.27, and UE 5.0–5.8. Current availability on Fab follows the product listing. See the [validation scope](CHANGELOG.en.md#validation-and-performance-scope) for build and runtime coverage.
+Version 2.0 integrates Mass automatically on UE5. You still add the component, configure each shot, and use its functions and events from your bullet Actor. UE4 uses the same motion calculations from component Tick. Your project supplies damage, explosions, weapon rules, and pooling policy.
 
 ## Installation
 
-Install the package for your engine version through Fab, or put the purchased `BulletMovement` folder in your project's `Plugins` directory. Enable BulletMovement under **Edit → Plugins**, enable the requested dependencies, and restart the editor. UE5 packages use Mass; UE4 packages do not require Mass. Niagara supplies optional trails.
+Install the package for your engine version through Fab, or place the purchased `BulletMovement` folder in your project's `Plugins` directory. Enable BulletMovement under **Edit → Plugins**, enable its requested dependencies, and restart the editor. UE5 packages use Mass. UE4 packages do not require Mass. Trails use Niagara.
 
-Source packages require a C++ build environment that matches your engine. Enable only one copy of BulletMovement per project; do not load both an engine installation and a project installation. This documentation repository contains instructions, while the commercial plugin source is supplied through the purchase channel.
+The release targets **Win64**, with source packages for UE 4.26, 4.27, and 5.0–5.8: 11 engine branches in total. Fab availability follows the product listing. Source packages require a C++ build environment suitable for the engine version you use. See [validation and performance scope](CHANGELOG.en.md#validation-and-performance-scope) for what has been compiled and observed at runtime.
+
+Keep only one installation of BulletMovement enabled in a project. In particular, avoid loading both an engine copy and a project copy. This repository contains the documentation; the commercial plugin source is provided through the purchase channel. Demo maps and example assets are not included, so the steps below use a bullet Actor and collision shape you create yourself.
 
 ## Five minutes: a moving bullet that stops
 
-1. Create an Actor Blueprint such as `BP_Bullet`. Add a Sphere Collision or Box Collision and make it the root. Set **Mobility = Movable**, **Simulate Physics = false**, and **Collision Enabled = Query Only**. Set the bullet and test wall to Block each other. Attach the visible mesh beneath the collision root; disable mesh collision if it is only visual.
-2. Add **BulletMovement** and leave **Auto Activate** enabled. No BeginPlay activation call is necessary.
-3. Set `InitialSpeed = 3000`, `MaxSpeed = 0`, `MinSpeed = 0`, and `MaxMoveDistance = 6000`. Set `DefaultBulletTimeLimits` to `[3.0]`. Leave `GravityScale = 0` and `RefractType = None`. Speed is in cm/s, distances in cm, and time in seconds.
-4. Place the Actor in the level or create it with Spawn Actor. Point its +X axis along the firing direction, put a blocking wall ahead, and play.
-5. Bind the component's `OnBulletStop`. For this minimal example, call Destroy Actor in the event. The bullet stops at its distance/time limit or with reason `Hited` when it reaches the wall. Stopping movement does not itself destroy the Actor.
+1. Create an Actor Blueprint such as `BP_Bullet`. Add a Sphere Collision or Box Collision and make it the root. Set **Mobility = Movable**, **Simulate Physics = false**, and **Collision Enabled = Query Only**. Set the bullet and a test wall to Block each other. Attach your visible mesh beneath the collision root and disable its collision if it is only for display.
+2. Add **BulletMovement** and leave **Auto Activate** enabled. You do not need to call an activation function from BeginPlay.
+3. Set `InitialSpeed = 3000`, `MaxSpeed = 0`, `MinSpeed = 0`, and `MaxMoveDistance = 6000`. Set `DefaultBulletTimeLimits` to `[3.0]`. Leave `GravityScale = 0` and `RefractType = None`. Speeds use cm/s, distances use cm, and time uses seconds.
+4. Place the Actor in the level or create it with Spawn Actor. Point its +X axis along the firing direction, put the blocking wall ahead, and play.
+5. Bind the component's `OnBulletStop` event. For this example, call Destroy Actor from that event. The bullet stops when it reaches its range or time limit, or reports `Hited` when it hits the wall. Stopping movement does not destroy the Actor by itself.
 
-Initial speed defaults to 0 and the default single time stage lasts one second, so configure a nonzero speed. If the legacy `BulletTimeLimits` field also contains entries, BeginPlay copies that array over `DefaultBulletTimeLimits`; use the latter consistently for new content.
+The default initial speed is 0, and the default lifetime is a single one-second stage. Set a nonzero speed for the first test. If the legacy `BulletTimeLimits` array has entries, BeginPlay copies them over `DefaultBulletTimeLimits`; use `DefaultBulletTimeLimits` consistently for new content.
 
-To supply the shooter, ignored actors, target, or other per-shot data before the first movement, turn off Auto Activate, configure the component, and call `Activate` with Reset enabled or `ActiveBulletMovement`. Deferred Actor spawning is another way to configure before completing the spawn.
+If a shot needs its shooter, ignored Actors, target, or other data assigned before it moves, turn off Auto Activate. Configure it, then call `Activate` with Reset enabled or `ActiveBulletMovement()`. You can also use deferred Actor spawning to configure the component before finishing the spawn. `ActiveBulletMovement` accepts an optional Actor and an `Active` flag; omitting the Actor uses the component's owner, and passing `Active = false` stops movement.
 
 ## Collision and ignored actors
 
-Movement sweeps `UpdatedComponent`, normally the Actor's collision root. Children do not each receive a full movement sweep just because they follow the root. Make the collision shape you need to test the root.
+Movement sweeps `UpdatedComponent`, which is normally the Actor's collision root. Child components follow that movement, but each child does not receive a separate full movement sweep. Make the shape that should detect obstacles the root.
 
-The component also handles a common Blueprint layout: if the root is the untouched `DefaultSceneRoot` and there is **exactly one descendant PrimitiveComponent with query collision enabled**, it promotes that collision component to the root while preserving world transforms. A Query Only shape qualifies. If there are multiple candidates, a custom root, or an explicitly selected different `UpdatedComponent`, your setup is preserved; choose the collision root yourself.
+For a common Blueprint layout, the component can choose the collision root automatically. If the Actor still has an untouched `DefaultSceneRoot` and **exactly one descendant PrimitiveComponent with query collision enabled**, the component promotes that shape to the root and preserves world transforms. A Query Only shape qualifies. With several candidates, a custom root, or a different explicitly selected `UpdatedComponent`, it preserves your setup. In those cases, choose the collision root yourself.
 
-`IgnoreActors` includes the bullet itself automatically. **The shooter, Owner, and Instigator are not all added automatically.** Add the shooter and any other actors that the bullet should pass through. The array applies to movement sweeps and automatic targeted-reflection queries, and runtime edits are synchronized. It ignores entire Actors, not individual components, and does not create a reciprocal ignore rule for another object sweeping toward the bullet.
+The bullet adds itself to `IgnoreActors` automatically. Add the shooter and any other Actors the bullet should pass through; setting Owner or Instigator does not automatically add all of them. `IgnoreActors` applies to movement sweeps and automatic targeted-reflection queries. Changes made at runtime are synchronized with movement, while existing native movement-ignore entries are preserved.
 
-`SwitchCollision(false)` disables sweeps for this component's movement; it does not globally change every component's Collision Enabled setting. Return sweeps have their own `bSweepReturn` setting. UE collision channels and both objects' responses still determine blocking and overlaps. Connect your game's damage and explosion logic to collision events; the plugin does not call Apply Damage automatically.
+Each ignore entry covers a whole Actor, rather than an individual component. It also applies only to the bullet's queries: it does not make another object ignore the bullet when that object sweeps toward it.
+
+`SwitchCollision(false)` turns off sweeps for this component's movement. It does not change every component's Collision Enabled setting. Return movement has a separate `bSweepReturn` setting. Collision channels and both objects' responses still determine which interactions block or overlap. Connect your damage and explosion logic to the appropriate collision events; BulletMovement does not call Apply Damage for you.
 
 ## Speed, range, and time stages
 
-| Setting | Current behavior |
+| Setting | How it works |
 | --- | --- |
-| `InitialSpeed` / `CurrentSpeed` | Activation speed / current scalar speed in cm/s. `UpdateInitialSpeed` updates both and the current velocity vector. |
-| `MaxSpeed` | Speed cap applied during acceleration updates. Zero means unlimited. It is not a global limiter for arbitrary forces or direct velocity assignments. |
-| `MinSpeed` | Stops with reason `Speed` when scalar speed is at or below this threshold. |
-| `MaxMoveDistance` | Positive values limit outbound travel in cm; zero means no distance limit. `bCheckDistance = false` disables distance checks. |
-| `DefaultBulletTimeLimits` | Duration of each individual time stage in seconds, rather than cumulative timestamps. Copied into the runtime stage array on activation. |
-| `GravityScale` | Multiplier for world gravity. Zero disables gravity; rigid-body simulation is unnecessary. |
+| `InitialSpeed` / `CurrentSpeed` | Speed at activation and current scalar speed, in cm/s. `UpdateInitialSpeed(Speed)` changes both values and updates the velocity vector. |
+| `MaxSpeed` | Caps speed during acceleration updates. Zero leaves acceleration uncapped. It does not cap every force input or a velocity you assign directly. |
+| `MinSpeed` | Stops movement with reason `Speed` when scalar speed is at or below this value. |
+| `MaxMoveDistance` | Limits travel before return, in cm. A positive value sets a limit; zero gives unlimited distance. `bCheckDistance = false` turns off distance checks. |
+| `DefaultBulletTimeLimits` | Holds the duration of each time stage, in seconds. Activation copies it into the runtime stage array. Entries are individual durations, not cumulative timestamps. |
+| `GravityScale` | Multiplies world gravity. Zero turns gravity off. It does not require rigid-body simulation. |
 
-For example, `[0.5, 1.0, 2.0]` gives three stages lasting 0.5, 1, and 2 seconds. `OnBulletStepUp(Step)` fires when entering a remaining stage. Stages are zero-based, so the first transition reports 1. Once all stages are consumed, the bullet stops with reason `Time`. Checks occur during movement updates, so this is not a precision timer; an empty array stops at the update check.
+For example, `[0.5, 1.0, 2.0]` creates three stages lasting 0.5, 1, and 2 seconds. `OnBulletStepUp(Step)` fires when the bullet enters the next available stage. Stage indices start at zero, so the first transition reports 1. After the final stage, the bullet stops with reason `Time`.
 
-`MovedDistance` records actual movement and `MoveableDistance` records the shot's remaining range. Outbound range checks are replaced by return completion conditions during return.
+Time checks run during movement updates, rather than through a precision timer. An empty stage array stops the bullet at the update check; it does not give the bullet an unlimited lifetime.
+
+`MovedDistance` records the distance actually traveled, and `MoveableDistance` holds the shot's remaining range. During return, return-completion conditions take the place of the ordinary range checks.
 
 ## Acceleration, hit deceleration, and deflection
 
-Add entries to `AcceleInfo`. With the default `bScaleByDelta = true`, constant `DefaultAccle` uses cm/s² and changes scalar speed according to elapsed time. An initial speed of 1000 and acceleration of 500 add approximately 500 cm/s each second, up to a positive `MaxSpeed`. Multiple entries add together.
+Configure acceleration in `AcceleInfo`, or call `AddAcceleration(Info)` to append an entry and enable acceleration at runtime. Several entries contribute together. With the default `bScaleByDelta = true`, a constant `DefaultAccle` is measured in cm/s². For example, starting at 1000 cm/s with an acceleration of 500 adds approximately 500 cm/s each second, until a positive `MaxSpeed` caps the speed.
 
-For a CurveFloat asset, assign `AccleCurve`: X is elapsed seconds for that entry, and Y is multiplied by `DefaultAccle`. For an inline curve, select `AccleType = Curve` and edit `RuntimeAccleCurve`; its Y values are acceleration directly. An assigned `AccleCurve` takes priority. `StartAcceleration` and `StopAcceleration` enable or pause application; pausing does not clear entries or reset curve time. Setting `bScaleByDelta = false` makes the value a per-update speed increment whose result depends on update frequency; use it only when that behavior is intentional.
+There are two ways to use a curve:
 
-In `HitDeceleration`, `Decele` is the speed removed per applicable hit in cm/s. `MaxTime` is a **hit count, not seconds**. This is primarily useful with reflection, which lets movement continue; a normal non-reflecting blocking hit stops immediately. Each hit consumes the current first entry; when exhausted, it is replaced by the last entry. Do not rely on three or more entries retaining their original array order. `OnBulletDecele` reports the resulting speed and deceleration stage. For a strict custom sequence, your game can supply the next entry when the stage changes.
+- Assign a CurveFloat asset to `AccleCurve`. X is elapsed time for that acceleration entry, in seconds; Y is multiplied by `DefaultAccle`. The multiplier defaults to 0, so assigning a curve alone produces no acceleration. Set the multiplier as well.
+- Set `AccleType = Curve` and edit `RuntimeAccleCurve` for an inline curve. Its Y values specify acceleration directly.
 
-`AddForce(None, Vector)` applies a one-shot world-space velocity change on the next movement update. A named `AddForce` supplies persistent world-space acceleration; calling it with the same name replaces that entry. Remove one with `RemoveForce(Name)`, or all with `ClearForce()`. These are numerical trajectory inputs, not mass-based rigid-body Add Force operations.
+An assigned `AccleCurve` asset takes priority over the inline curve. `StartAcceleration()` resumes acceleration and `StopAcceleration()` pauses it; neither clears the entries or resets their curve time. If you set `bScaleByDelta = false`, the value becomes a speed increment per update. That makes the result depend on update frequency, so use it only when you want that behavior.
+
+`HitDeceleration` removes speed on applicable blocking hits. In each entry, `Decele` is the amount removed in cm/s, and `MaxTime` is the number of hits for that entry, **not a duration in seconds**. You can append entries and enable hit deceleration with `AddDeceleration(Info)`.
+
+Hit deceleration is most useful with reflection, which lets the bullet continue moving after a hit. A normal blocking hit without reflection stops the bullet immediately. Each applicable hit consumes the first entry. When that entry runs out, the last entry takes its place, so an array of three or more entries does not necessarily play in its original order. `OnBulletDecele(CurrentSpeed, DeceleStep)` reports the resulting speed and deceleration stage. If you need a strict custom sequence, supply the next entry from your game when the stage changes.
+
+For deflection, call `AddForce(None, Vector)` to add a one-shot world-space velocity change on the next movement update. A named `AddForce` entry supplies persistent world-space acceleration. Calling it again with the same name replaces that entry. Use `RemoveForce(Name)` to remove one entry, or `ClearForce()` to clear persistent and pending one-shot forces. These inputs change the calculated trajectory; they are not mass-based rigid-body Add Force operations.
 
 ## Homing and initial aim
 
-With `bFollowAim = true`, activation points the bullet toward the world-space `AimPoint`. This sets the initial direction. For ongoing homing, set a positive `DefaultHoming` and call `SetupHoming(TargetComponent)`, or assign `HomingTarget` before activation. The target can be any valid SceneComponent.
+Set `bFollowAim = true` to point the bullet toward the world-space `AimPoint` when it activates. This sets its initial direction. To keep steering toward a moving target, set a positive `DefaultHoming` and call `SetupHoming(TargetComponent)`, or assign `HomingTarget` before activation. Any valid SceneComponent can be a target.
 
-`DefaultHoming` controls the per-update blend toward the target direction; larger values turn faster. This public homing mode multiplies its blend amount by DeltaTime and is not a strict angular-speed limit or a deterministic network simulation. For `HomingCurve`, X is elapsed homing time in seconds and Y multiplies homing strength. Use `SwitchHomingCurve` to enable, disable, or replace the curve. `HomingEndRange` stops further steering within the given distance in cm. `SwitchHoming(false)` pauses homing; `HomingLost()` explicitly ends it and raises the loss event.
+`DefaultHoming` controls how strongly each update blends the direction toward the target. Larger values turn faster. The public component multiplies the blend amount by DeltaTime; this is not a strict angular-speed limit or a deterministic network simulation.
 
-If the target becomes invalid, such as when it is destroyed, `OnBulletHomingLost` fires and homing turns off. Other movement rules continue; the component does not automatically acquire a replacement target.
+Use `HomingCurve` to vary steering over time. X is elapsed homing time in seconds, and Y multiplies homing strength. `SetupHoming` resets the homing curve clock, which is separate from the bullet's time-stage clock. `SwitchHomingCurve` enables or disables the curve, or replaces it with another curve. `HomingEndRange` stops further steering once the bullet is within that distance of the target, in cm.
+
+`SwitchHoming(false)` pauses homing. `HomingLost()` ends it explicitly and fires `OnBulletHomingLost`. If the target becomes invalid, for example because it is destroyed, the component also fires that event and turns homing off. The bullet continues under its other movement rules; it does not select a replacement target automatically.
 
 ## Return
 
-Call `SetupReturn(ReturnComponent, SocketName)` to head toward a component's socket position. Use None when no socket is needed. The compatibility-named `OnBulletRetun` event fires when return **starts**.
+Call `SetupReturn(ReturnComponent, SocketName)` to send the bullet toward a component's socket position. Use None for the socket name when no socket is needed. `OnBulletRetun(ReturnMesh, ReturnSocket)` fires when return **starts**. Its spelling is retained for compatibility.
 
-Return speed is taken from `MaxSpeed`, so give it a positive value such as 3000 when using return. Although `MaxSpeed = 0` means unlimited during ordinary acceleration, it cannot provide a return speed. `ReturnRange` is the completion radius in cm: 100 means one meter. `bSweepReturn` defaults to false, allowing return through obstacles; true enables swept collision.
+`SetupReturn` sets `CurrentSpeed` to `MaxSpeed`. Set a positive value, such as 3000, when you use return. Zero leaves the return leg stationary, even though it means unlimited for ordinary acceleration.
 
-Reaching that radius stops with reason `Return`. An invalidated return target also ends with the same reason so it can use the same recycling path. Outbound distance and time stages do not end a return leg. Return has no separate timeout; your game may interrupt it. If a single movement step is much longer than the completion radius, reduce speed, enlarge the radius, or shorten the update interval.
+`ReturnRange` is the completion radius in cm; 100 means one meter. `bSweepReturn` defaults to false, so the bullet can return through obstacles. Set it to true to sweep for collision during return.
+
+The bullet stops with reason `Return` when it reaches the completion radius. An invalidated return target ends movement with the same reason, allowing both cases to use the same recycling logic. Ordinary distance and time-stage limits do not end a return leg, and return has no separate timeout. Your game can interrupt it when needed. If one movement step can carry the bullet much farther than the completion radius, reduce its speed, increase the radius, or shorten the update interval.
 
 ## Reflection and targeted reflection
 
-Set `RefractType = Normal`, clear the targeted-reflection list, and set a positive `RefractTime` to reflect direction around the hit normal. With no explicit target list, zero disables reflection; -1 serves as a count that does not run out. Reflection requires a blocking collision. `OnBulletRefracted` supplies the hit result and reflected velocity.
+For a normal bounce, set `RefractType = Normal`, clear the targeted-reflection list, and give `RefractTime` a positive count. The bullet reflects around the blocking hit's normal. With no explicit target list, zero disables reflection and -1 allows reflection without running out of counts. Reflection requires a blocking collision. `OnBulletRefracted(Hit, Velocity)` reports the hit and the new velocity.
 
-In `Target` mode, a hit redirects the bullet toward target components. `SetRefractTarget` replaces the explicit list; `AddRefractTarget` appends to it. Keep target references valid. With no explicit targets, set the object channels in `RefractTargetType`, the search radius in `RefractTargetMaxRange`, and optionally the forward cone angle in `RefractTargetLimitAngle`. Zero angle disables the angle filter. Automatic candidates come from a scene query and are not guaranteed to be sorted by nearest distance; do not rely on automatic nearest-enemy selection.
+In `Target` mode, a blocking hit redirects the bullet toward target components. `SetRefractTarget(Targets)` replaces the explicit list, while `AddRefractTarget(Targets)` appends to it. Keep those component references valid.
 
-Both the target list and remaining reflection count affect subsequent behavior. With a nonempty list, setting the count to zero alone may not disable reflection; use `RefractType = None` to turn reflection off. Refill the list and count for each shot if pooled bullets should repeat the same chain. Your game supplies team filtering, target selection rules, and damage cooldowns.
+To search for targets automatically, leave the explicit list empty, choose the object channels in `RefractTargetType`, and set `RefractTargetMaxRange` as the search radius in cm. You can also set a forward cone angle with `RefractTargetLimitAngle`; zero disables that angle filter. The scene query does not guarantee candidates are ordered by distance, so automatic reflection should not be treated as nearest-enemy selection.
+
+Both the target list and the remaining count affect reflection. If the list is nonempty, setting `RefractTime` to zero alone may not disable it. Use `RefractType = None` to turn reflection off. For pooled bullets, refill the list and count before each shot if you want to repeat the same chain. Your project supplies team filtering, target-selection rules, and damage cooldowns.
 
 ## Trails, stopping, and pooling
 
-Assign a Niagara System to `TrailVFX` and set `TrailScale`, or replace it at runtime with `SetupTrailVFX`. The trail follows the bullet root, deactivates on stop, and is cleaned up when the Actor is destroyed. Niagara asset settings determine particle fade; the plugin does not guarantee that a trail survives Actor destruction. For a natural finish, stop the bullet before delayed destruction or spawn a separate finishing effect in your game.
+Assign a Niagara System to `TrailVFX` and set `TrailScale`. At runtime, `SetupTrailVFX(VFX, Scale)` replaces the trail. It follows the bullet root and deactivates when movement stops. The trail component is cleaned up when the Actor is destroyed, so it does not persist independently after destruction. Niagara settings control how particles fade. To let a trail finish naturally, stop the bullet and delay destruction, or create a separate finishing effect in your game.
 
-`StopBulletMovement()` silently stops movement and the trail without a stop-reason event. `BulletStop(Reason)` broadcasts `OnBulletStop` and another stop event, `OnBulletMovementStop`, then stops. Usually bind only one for a particular gameplay action to avoid duplicate damage or recycling. Common automatic reasons are `Time`, `Distance`, `Speed`, `Return`, and `Hited`. Your game may pass `Dameged` or `Direct` explicitly; the component does not implement damage handling. Compatibility spellings `Hited`, `Dameged`, and `OnBulletRetun` are retained.
+There are two ways to stop:
 
-Recommended pooling sequence:
+- `StopBulletMovement()` stops movement and the trail without broadcasting a stop-reason event. `Deactivate()` also provides a way to stop when recycling.
+- `BulletStop(Reason)` broadcasts `OnBulletMovementStop` first, then `OnBulletStop`, and then stops movement. Bind a particular damage or recycling action to one of those events to avoid running it twice.
 
-1. Turn off Auto Activate for pool creation. Recycle with `Deactivate()` or `StopBulletMovement()`, then manage visibility and collision.
-2. Before another shot, set its world transform, initial speed, range, `DefaultBulletTimeLimits`, targets, and per-shot `IgnoreActors`. Keep the bullet itself in that array.
-3. Refill consumed `HitDeceleration`, `RefractTime`, and reflection targets. Clear unwanted persistent forces. Reset acceleration entry `AccleTime` and homing switches as needed. The internal deceleration stage reported by `OnBulletDecele` is not automatically reset on activation; Blueprint users needing a count starting at zero for every shot can maintain their own per-shot counter. Activation reset does not restore every property to class defaults.
-4. Restore visibility and the required collision setup. Call `Activate` with Reset enabled, `ActiveBulletMovement()`, or `SwitchBulletMovement(true, true)`, then apply any homing/return behavior that must follow activation. Activation resets speed, remaining distance, time stages, and return state, and re-enables outbound movement sweeps.
+Common automatic reasons are `Time`, `Distance`, `Speed`, `Return`, and `Hited`. Your game can also pass `Dameged` or `Direct` explicitly. The component does not implement damage handling. The public spellings `Hited`, `Dameged`, and `OnBulletRetun` remain unchanged for compatibility.
 
-On UE5, the component manages entity creation, release, unregistration, and destruction automatically. Do not create a second Mass movement entity for the same bullet or combine it with another movement component or physics simulation that also writes its position.
+For a pool, prepare each shot explicitly:
+
+1. Turn off Auto Activate when creating pool Actors. Recycle with `Deactivate()` or `StopBulletMovement()`, then manage the Actor's visibility and collision.
+2. Before firing again, set the world transform, initial speed, range, `DefaultBulletTimeLimits`, targets, and per-shot `IgnoreActors`. Keep the bullet itself in the ignore array.
+3. Refill consumed `HitDeceleration` entries, `RefractTime`, and reflection targets. Clear persistent forces that should not carry over. Reset acceleration-entry `AccleTime` and homing switches as needed. The internal deceleration-stage counter reported by `OnBulletDecele` does not reset automatically on activation; Blueprint users who need it to start at zero for every shot can keep their own per-shot counter.
+4. Restore visibility and the required collision setup. Call `Activate` with Reset enabled, `ActiveBulletMovement()`, or `SwitchBulletMovement(true, true)`. Apply any homing or return behavior that needs to follow activation afterward.
+
+Activation resets speed, remaining distance, time stages, and return state, clears `CurrentRefTarget`, and re-enables ordinary movement sweeps. It does not restore every property to its class default. `SwitchBulletMovement(true, false)` leaves an already active shot running without resetting it; pass Reset when you want to start a new shot.
+
+On UE5, the component creates and releases its Mass entity and handles unregistration and destruction. Do not create another Mass movement entity for the same bullet. Use one system to control its position: another movement component or physics simulation that writes to it at the same time will conflict.
 
 ## Execution on UE4 and UE5
 
-Both backends share the numerical motion kernel and component workflow. UE4.26/4.27 run that kernel and scene movement from component Tick, without Mass. UE5 gathers Actor/component input on the game thread, computes numerical motion in a Mass processor, then performs scene movement, collision, and events on the game thread. No manual entity registration is required.
+The Actor setup, component functions, and numerical motion kernel are shared by both backends. On UE4.26/4.27, component Tick runs the motion calculations and scene movement without Mass. On UE5, the component gathers Actor and component input on the game thread, a Mass processor computes motion, and the game thread applies scene movement, collision, and events. The component handles registration; you do not need a special bullet base class, manager Actor, or Mass Trait asset.
 
-UE5.0–5.3 traverse chunks sequentially within the Mass motion processor's worker task; UE5.4 and later use parallel chunk queries. UE5.8 additionally includes scene-publication and query-batching support for its corresponding Chaos interfaces. Other versions use ordinary component scene movement. This 5.8 optimization is not an identical implementation across all engine versions.
+UE5.0–5.3 process chunks sequentially within the Mass motion processor's worker task. UE5.4 and later use parallel chunk queries. UE5.8 also includes support for scene publication and batched queries through that version's Chaos interfaces. Other engine versions use ordinary component scene movement, so the UE5.8 implementation should not be assumed to apply unchanged to them.
 
-The component retains its update interval, approximately 0.016 seconds by default. Interval, frame rate, collision shape size, and speed affect trajectory and event timing. Mass schedules motion work; Actors, collision, events, Niagara, and your Blueprint logic still have costs. No universal cross-version throughput, net speedup, or hitch-free guarantee has been established. Measure complete frame time on your target hardware with the actual projectile workload.
+The component's default update interval remains approximately 0.016 seconds. That interval, frame rate, collision-shape size, and bullet speed affect trajectories and event timing. Mass schedules motion work, but Actors, collision, events, Niagara, and your Blueprint logic still contribute to frame time. No universal throughput, overall speedup, or hitch-free result has been established across engine versions. Measure complete frame time on your target hardware using your actual projectile workload.
 
 ## Platform and networking scope
 
-The release target platform is **Win64**. The plugin does not supply projectile state replication, RPCs, client prediction, replay, or server correction. Mass processors being eligible to run in client/server worlds does not automatically synchronize projectiles. Networked games must implement spawn/damage authority, replication, and visual presentation. Refer to each released package's actual validation scope for other platforms, dedicated servers, and packaged runtime coverage.
+The release platform is **Win64**. BulletMovement does not provide projectile-state replication, RPCs, client prediction, replay, or server correction. A Mass processor being allowed to run in client and server worlds does not synchronize the projectiles between them. For a networked game, implement spawn and damage authority, replication, and visual presentation in your project. Check each released package's validation scope before relying on other platforms, dedicated servers, or packaged-runtime coverage.
 
-The optional Blueprint helpers `GetShotAngle` and `SpawnBulletActor` generate spread transforms or spawn a specified Actor class using count, cone, and randomness settings. They do not replace pooling, authoritative network spawning, or a damage system.
+The optional Blueprint helpers `GetShotAngle` and `SpawnBulletActor` can create spread transforms or spawn a specified Actor class. Both take a count, a cone, and a randomness setting; the cone's X and Y values control horizontal and vertical spread. `SpawnBulletActor` also accepts optional Owner and Instigator arguments. These helpers do not implement pooling, authoritative network spawning, or damage.
 
 Before upgrading existing content, read [Changes and migration](CHANGELOG.en.md), especially the notes on time arrays, consumed settings, collision roots, and C++ headers.
