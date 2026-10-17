@@ -14,6 +14,7 @@
 - **保留常用蓝图入口。** 组件类仍为 `UBulletMovementComponent`，保留 `OnBulletRetun` 等旧名称；补充停止原因和 `OnBulletMovementStop` 事件。
 - **完善碰撞设置。** `IgnoreActors` 会同步到移动扫掠，同时保留碰撞体原本已有的原生忽略项。保留 `DefaultSceneRoot` 且下面只有一个启用 Query 的碰撞体时，会自动将该碰撞体提升为根。
 - **修复对象池的反弹链。** 每次激活清空 `CurrentRefTarget`，避免上一发的当前目标影响重新填入的目标列表，让下一发从首目标开始。
+- **修复发布包编译问题。** 补齐蓝图属性和函数的分类，修复 UE5.1 事件参数重名，并为 UE5.6、5.7 显式包含 Mass 实体句柄头文件。
 
 ### 从 1.0 升级
 
@@ -29,13 +30,15 @@
 
 **事件与停止。** `StopBulletMovement` 直接停止，不触发停止原因事件；需要事件时调用 `BulletStop`。它会先触发新增的 `OnBulletMovementStop` 和原有的 `OnBulletStop`，再停止移动，同一个伤害或回收动作绑定一个事件即可。`OnBulletRetun` 表示开始返回，完成返回使用停止原因 `Return`。新增枚举值追加在原 `Time/Distance/Speed/Return` 之后，保留原值的顺序。
 
+UE4.26–UE5.1 的部分事件输出引脚使用 `RefractVelocity`、`DeceleSpeed`、`ReturnTargetMesh` 和 `ReturnTargetSocket`；UE5.2 及以后分别使用 `Velocity`、`CurrentSpeed`、`ReturnMesh` 和 `ReturnSocket`。切换引擎分支后，请检查这些事件的连线。
+
 **对象池。** 激活会重置速度、时间、距离及当前反弹目标等飞行状态。再次发射前，仍需重新填入消耗过的反弹次数、目标列表和命中减速，清理持久力，设置本发的游戏参数；具体顺序见[手册](README.md#尾迹停止与对象池)。尾迹会随 Actor 销毁而清理，想保留自然消退效果时，先停止子弹、延迟销毁，或生成独立结束效果。
 
 **C++。** 加速度、减速度和枚举分别放在 `FBulletAcceleInfo.h`、`FBulletDeceleInfo.h`、`E_BulletAccleType.h`、`E_BulletRefractType.h` 和 `E_BulletStopReason.h`，按需要包含相应头文件。部分运行状态和内部标志不再作为可写蓝图参数公开，直接读写内部字段的代码需要调整为对应函数调用。`TrailVFX` 仍接收 Niagara System；引用它时使用资产对象，不依赖底层指针包装类型。
 
 ### 验证与性能说明
 
-本次逐版编译使用的引擎版本是 4.26.2、4.27.2、5.0.3、5.1.1、5.2.1、5.3.2、5.4.4、5.5.4、5.6.1、5.7.4 和 5.8.3。各包已通过对应版本的 UBT/UHT 和非 Unity 插件 C++ 编译检查。检查使用 `NoLink`，完成到 C++ 对象编译，没有链接成每版 DLL；这些结果也只覆盖上面列出的补丁版本。
+本次逐版编译使用的引擎版本是 4.26.2、4.27.2、5.0.3、5.1.1、5.2.1、5.3.2、5.4.4、5.5.4、5.6.1、5.7.4 和 5.8.3。各包已按引擎插件的要求，通过对应版本的 UBT、UHT（`EngineRuntime`）和非 Unity 插件 C++ 编译检查。检查目标为 Win64 Game Development，使用 `NoLink`，完成到 C++ 对象编译，没有链接成每版 DLL，也没有走完各版默认 `BuildPlugin` 的 Editor、Development 和 Shipping 构建；这些结果只覆盖上面列出的补丁版本。
 
 UE5.8 另外完成了 PIE 运行检查，覆盖普通 Actor 的激活、停止、注销和销毁，以及游戏子弹的实际集成。其他版本的运行、各版打包和联网模式仍需在对应项目中验证。
 

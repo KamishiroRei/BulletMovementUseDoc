@@ -124,6 +124,8 @@ Activation resets speed, remaining distance, time stages, and return state, clea
 
 On UE5, the component creates and releases its Mass entity and handles unregistration and destruction. Do not create another Mass movement entity for the same bullet. Use one system to control its position: another movement component or physics simulation that writes to it at the same time will conflict.
 
+Some event output pin names differ between UE4.26–UE5.1 and later engines. Check the [upgrade notes](CHANGELOG.en.md) when moving between branches; the event values have the same meaning.
+
 ## Execution on UE4 and UE5
 
 The Actor setup, component functions, and numerical motion kernel are shared by both backends. On UE4.26/4.27, component Tick runs the motion calculations and scene movement without Mass. On UE5, the component gathers Actor and component input on the game thread, a Mass processor computes motion, and the game thread applies scene movement, collision, and events. The component handles registration; you do not need a special bullet base class, manager Actor, or Mass Trait asset.

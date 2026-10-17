@@ -15,6 +15,7 @@ BulletMovement 2.0 keeps the existing way of building a projectile: add the comp
 - Changes to `IgnoreActors` are synchronized with movement sweeps, preserving native movement-ignore entries that were already present. The component can also promote a single query-enabled collision shape beneath an untouched `DefaultSceneRoot`.
 - Homing, return, reflection, acceleration, hit deceleration, time and distance limits, and Niagara trails remain available through the component workflow.
 - A pooled shot no longer retains the previous shot's current reflection target. Each activation clears `CurrentRefTarget`, so a refilled reflection chain can start at its first target.
+- Fixed plugin compilation issues: added the required Blueprint categories, renamed conflicting UE5.1 delegate parameters, and explicitly included the Mass entity handle header on UE5.6 and UE5.7.
 
 The plugin descriptor uses `VersionName = 2.0`. The release targets Win64 and provides source packages for UE 4.26, 4.27, and 5.0–5.8, covering 11 engine branches. Demo maps and example assets are not included. The [validation scope below](#validation-and-performance-scope) explains the compilation and runtime coverage.
 
@@ -32,15 +33,17 @@ Keep a recoverable copy of your project before upgrading. Install the package fo
 
 **Events and stopping.** `StopBulletMovement()` stops without broadcasting a stop reason. Use `BulletStop(Reason)` when you need a callback: it broadcasts `OnBulletMovementStop`, then `OnBulletStop`, and then stops movement. Bind a particular damage or recycling action to one of those events. `OnBulletRetun` means return has started; a stop with reason `Return` means it has ended. New stop-enum values follow the original `Time`, `Distance`, `Speed`, and `Return` entries. The compatibility spellings `Hited`, `Dameged`, and `OnBulletRetun` are retained.
 
+On UE4.26–UE5.1, the affected event output pins are named `RefractVelocity`, `DeceleSpeed`, `ReturnTargetMesh`, and `ReturnTargetSocket`. On UE5.2 and later, they are named `Velocity`, `CurrentSpeed`, `ReturnMesh`, and `ReturnSocket`, respectively. Check event connections when switching engine branches.
+
 **Pooling.** Activation resets shot state such as speed, remaining distance, time stages, and return state. It also clears `CurrentRefTarget`. It does not refill consumed reflection counts or hit-deceleration arrays, clear persistent forces, or restore your per-shot settings. Prepare these before reactivation using the [pooling sequence](README.en.md#trails-stopping-and-pooling). The deceleration-stage counter does not reset automatically, so use your own per-shot counter if needed. Trail components are cleaned up when the Actor is destroyed; they do not persist independently afterward.
 
 **C++ headers and property access.** Acceleration, deceleration, and the enums now have separate headers: `FBulletAcceleInfo.h`, `FBulletDeceleInfo.h`, `E_BulletAccleType.h`, `E_BulletRefractType.h`, and `E_BulletStopReason.h`. Some runtime status fields and internal flags are no longer writable Blueprint settings. Review code that accesses internals directly and use the supported component functions. `TrailVFX` still takes a Niagara System; avoid depending on the pointer-wrapper type used internally.
 
 ### Validation and performance scope
 
-Compilation checks used the following engine patch versions: 4.26.2, 4.27.2, 5.0.3, 5.1.1, 5.2.1, 5.3.2, 5.4.4, 5.5.4, 5.6.1, 5.7.4, and 5.8.3. Each corresponding source package passed checks with that engine's UBT/UHT and non-Unity plugin C++ object compilation using `NoLink`.
+Compilation checks used the following engine patch versions: 4.26.2, 4.27.2, 5.0.3, 5.1.1, 5.2.1, 5.3.2, 5.4.4, 5.5.4, 5.6.1, 5.7.4, and 5.8.3. Each corresponding source package passed that engine's UBT, UHT with `EngineRuntime` plugin classification, and non-Unity plugin C++ object compilation for Win64 Game Development using `NoLink`.
 
-These checks exercise Unreal's build and reflected-header tooling and compile the plugin's C++ objects. Because they use `NoLink`, they do not establish that plugin DLL linking succeeded on all 11 versions. They also do not establish packaging or gameplay coverage, or compatibility with every historical patch in an engine branch.
+These checks exercise Unreal's build and reflected-header tooling and compile the plugin's C++ objects. They do not complete the default `BuildPlugin` builds for Editor, Game Development, and Game Shipping, or establish that plugin DLL linking succeeded on all 11 versions. They also do not establish packaging or gameplay coverage, or compatibility with every historical patch in an engine branch.
 
 Runtime observations are limited to UE5.8: ordinary Actor activation and stopping, component unregistration and Actor destruction, and a projectile integration. This does not establish runtime coverage for every target engine, packaged configuration, or network mode.
 
